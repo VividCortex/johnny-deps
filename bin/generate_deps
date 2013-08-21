@@ -1,0 +1,28 @@
+#!/usr/bin/env sh
+
+set -eu
+
+var=${1:-Godeps}
+
+get_sha() {
+	here=$(pwd)
+	cd "$GOPATH/src/$1"
+	git rev-parse HEAD
+	cd "$here"
+}
+
+get_branch() {
+	here=$(pwd)
+	cd "$GOPATH/src/$1"
+	git rev-parse --abbrev-ref HEAD
+	cd "$here"
+}
+
+echo "package main"
+echo 'import "fmt"'
+echo "func init() {"
+go list -f '{{join .Deps "\n"}}' | grep "\w*[.]\w*/" | while read dep ; do
+		echo "	$var += fmt.Sprintln(\"# $dep branch: $(get_branch $dep)\")"
+		echo "	$var += fmt.Sprintln(\"$dep $(get_sha $dep)\")"
+done
+echo "}"
