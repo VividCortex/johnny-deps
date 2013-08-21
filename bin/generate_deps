@@ -1,4 +1,4 @@
-#!/usr/bin/env sh
+#!/bin/sh
 
 set -eu
 
@@ -12,7 +12,7 @@ get_sha() {
 }
 
 get_branch() {
-	here=$(pwd)
+	here="$(pwd)"
 	cd "$GOPATH/src/$1"
 	git rev-parse --abbrev-ref HEAD
 	cd "$here"
