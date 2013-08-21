@@ -1,3 +1,6 @@
+machine:
+  environment:
+    GOPATH: /home/ubuntu/go
 test:
   override:
     - cd test && ./run_all_tests.sh
