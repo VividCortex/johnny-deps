@@ -12,7 +12,7 @@ set -eu
 godeps=${1-"Godeps"}
 deps=$(sed 's/#.*//;/^\s*$/d' < "$godeps")
 
-while read package version; do
+while read package version rest; do
   (
     echo ">> Getting package "$package""
     go get -u -d "$package"
