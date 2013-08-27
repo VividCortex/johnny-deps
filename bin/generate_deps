@@ -2,8 +2,6 @@
 
 set -eu
 
-var=${1:-Godeps}
-
 get_sha() {
 	here="$(pwd)"
 	cd "$GOPATH/src/$1"
@@ -14,13 +12,8 @@ get_sha() {
 get_branch() {
 	here="$(pwd)"
 	cd "$GOPATH/src/$1"
-	branch=$(git rev-parse --abbrev-ref HEAD)
+	git rev-parse --abbrev-ref HEAD
 	cd "$here"
-	if [ "$branch" == "HEAD" ]; then
-		echo "NONE"
-	else
-		echo "$branch"
-	fi
 }
 
 go list -f '{{join .Deps "\n"}}' | grep "\w*[.]\w*/" | while read dep ; do
