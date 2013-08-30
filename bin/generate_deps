@@ -17,6 +17,5 @@ get_branch() {
 }
 
 go list -f '{{join .Deps "\n"}}' | grep "\w*[.]\w*/" | while read dep ; do
-	#echo "$dep $(get_sha $dep) $(get_branch $dep)"
 	printf "%-50s %s %s\n" $dep $(get_sha $dep) $(get_branch $dep)
 done
