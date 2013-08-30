@@ -1,0 +1,22 @@
+#!/bin/sh
+
+set -eu
+
+get_sha() {
+	here="$(pwd)"
+	cd "$GOPATH/src/$1"
+	git rev-parse HEAD
+	cd "$here"
+}
+
+get_branch() {
+	here="$(pwd)"
+	cd "$GOPATH/src/$1"
+	git rev-parse --abbrev-ref HEAD
+	cd "$here"
+}
+
+go list -f '{{join .Deps "\n"}}' | grep "\w*[.]\w*/" | while read dep ; do
+	#echo "$dep $(get_sha $dep) $(get_branch $dep)"
+	printf "%-50s %s %s\n" $dep $(get_sha $dep) $(get_branch $dep)
+done
