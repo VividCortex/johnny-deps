@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 
+# Copyright (c) 2013 VividCortex, Inc. All rights reserved.
+# Please see the LICENSE file for applicable license terms.
+
 set -eu
 
 ## The Godeps file is expected to have lines like so:
