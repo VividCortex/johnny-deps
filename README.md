@@ -109,6 +109,7 @@ Released under the MIT License. Read the LICENSE file for details.
 
 Johnny Deps is the combination of several different thought processes from
 multiple authors, with inspiration from tools such as Ruby's Bundler and dep
-gem, Python's pip, and others.
+gem, Python's pip, and others. Give credit to [@pote](https://github.com/pote)
+and blame to [@xaprb](https://github.com/xaprb).
 
 ![Johnny Deps](http://i.imgur.com/MuupBVC.jpg)
