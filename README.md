@@ -1,90 +1,100 @@
-# Johnny Deps :: ![Build Status](https://circleci.com/gh/VividCortex/johnny-deps.png?circle-token=426f85f6d52ca0b308d1f6aab01dd219afdb4cb0)
+# Johnny Deps ![Build Status](https://circleci.com/gh/VividCortex/johnny-deps.png?circle-token=426f85f6d52ca0b308d1f6aab01dd219afdb4cb0)
 
-We wrote Johnny Deps to provide barebones dependency versioning on our Go projects. We have purposely kept it to a minimum of functionality
-so things like dependency resolution are outside of its scope, but it works and solves our problems regarding versioning, for further context on the writing of this tool refer to [this blog post](https://vividcortex.com/blog/2013/07/18/my-wishlist-versioned-packages-in-go/)
+Johnny Deps is a small tool from [VividCortex](https://vividcortex.com)
+that provides minimalistic dependency versioning for Go repositories using Git.
+Its primary purpose is to help create reproducible builds when many import paths in
+various repositories are required to build an application.  It uses a small shell
+script to fetch Git repositories and check them out to the version specified in a
+file called `Godeps`.
 
-## How does it work?
+## Getting Started
 
-Johnny Deps expects you to have a file called `Godeps` in the root of your project, in the format `<import path> <git tag>`.
+When called without arguments, `johnny_deps` reads the `Godeps` file in the CWD.
+You can specify the filename as an argument if desired.
 
-Here's a sample `Godeps` file:
-
-```
-github.com/VividCortex/ewma       v1.0
-github.com/VividCortex/robustly   v1.1
-```
-
-Once this file is in place, running the `johnny_deps` script will download those packages
-and check out the version specified:
-
-```
-$ ls .
-Godeps  foo.go  foo_test.go
-$ johnny_deps
-```
-
-When called without arguments `johnny_deps` looks for the Godeps file in the execution directory, alternatively, you can pass the path to the dependency file as an argument like `johnny_deps /path/to/dependencies` (in this case, the `dependencies` file would be parsed and applied).
-
-### Tags or commit hashes
-
-Johnny Deps suggests (and we usually use) Git tags because it's the most
-human-readable format and looks nicer in the `Godeps` file, but thanks to git
-being awesome we can also specify a commit SHA and that will work just as well.
-
-So if a particular project you want to import doesn't use git tags for versioning,
-you can still specify the commit you want to work with. Under the hood, we use
-`git checkout <tag>`, so anything `git` accepts for that argument will work.
-
-Another sample `Godeps` with a branch and a commit SHA:
+The file should be in the format `import_path version <extra>`.  Lines
+beginning with a `#` are comments. The first and second fields are used; any
+remaining fields are ignored. Here's a sample:
 
 ```
 github.com/VividCortex/ewma       v1.0
-github.com/nu7hatch/gotrail       2eb79d1f03ab24bacbc32b15b75769880629a865
-
-# TODO: This is a comment! :)
+github.com/VividCortex/robustly   426f85f6d52ca0b308d1f6aab01dd219afdb4cb0
 ```
 
-#### Something you absolutely shouldn't do
+Because `johnny_deps` uses `git checkout`, you can specify a branch instead of
+a tag or SHA. This may be useful if you simply want to use a different branch
+of a dependency, without pinning it to a specific version.  Using specific
+versions instead of branch names, however, has the advantage that unlike tools
+such as Ruby's Bundler, we don't need a `Godeps.lock` file.
 
-Because `johnny_deps` uses `git checkout <version>` to set the version of each package, you can technically specify a branch there, like `master` or `develop` or whatever. This is a very bad idea.
+### Installation
 
-The assumption that's made is that the versions in the `Godeps` file are immutable, this way we avoid needing a `Godeps.lock` file like [Ruby's Bundler](http://bundler.io/), you *can* ignore this rule, but be aware that you are doing so at your own peril and that we think you are a very bad person for doing this.
-
-## Usage
-
-You can run johnny_deps directly from the web or install it locally.
-
-### Run without installing it
-
-You can run `johnny_deps` specifying a tagged version, like so:
+You can run Johnny Deps directly from the web without installing it. We do this
+in our CircleCI tests in many cases. Here's an example of using version 0.2.2;
+you can use the latest master if you wish, too:
 
 ```
-$ curl -s https://raw.github.com/VividCortex/johnny-deps/v0.2.2/bin/johnny_deps | bash
+$ curl -s https://raw.github.com/VividCortex/johnny-deps/v0.2.2/bin/johnny_deps | sh
 ```
 
-### Install it locally
-
-To install Johnny Deps just clone the repo and then run:
+To install, clone the repo and then run:
 
     $ cd johnny_deps
     $ ./configure --prefix=/usr/local
     $ make install
 
-Now the `johnny_deps` tool should be available in your system.
+## Workflows
 
+Johnny Deps is intentionally agnostic about the specific workflow used. In
+practice, people seem to fall into one of two camps that reflect how they
+think about dependency management, and their differing goals.
+
+The first category, roughly speaking, is those who would like to build from
+the tip of their source control repositories all the time, but have a need for
+pinning some things to a specific version or branch. These users might have a
+minimal `Godeps` file that specifies only those dependencies. Everything else
+is unmanaged.
+
+The second school of thought holds that the `Godeps` file should contain all
+external dependencies and their exact versions, so that checking out a
+particular revision of an application's repository and running `johnny_deps`
+will result in exactly the same versions of all of the code used to build the
+application, every time.
+
+At VividCortex, we want to be able to reproduce a binary for debugging or
+other purposes. We use a combination of tools for this, including some helper
+scripts. The outcome is that all of our builds have a command-line flag called
+`--build-version` that, when present, will result in the binary printing out
+the Git revision from which it was built. Checking out that revision will restore the `Godeps`
+file exactly as it was at the time of the build, and running `johnny_deps`
+will then check out the versions of the dependencies used for the build. In
+this way, each build contains within it the evidence needed to reproduce the
+build exactly.
+
+If you're interested in how we do this, here's the process:
+
+1. We use the `generate_deps` file to generate the `Godeps` file's contents at the time of the build, and we commit it to Git.
+1. We get the application repository's Git revision and write it to a temporary Go source file, which contains an `init()` function that sets a global variable to the revision. After building, the temporary file is deleted.
+1. We make the application print out the contents of this global variable when the `--build-version` flag is specified.
 
 ## Contributing
 
-1. Fork the project.
-2. Write awesome code (in a feature branch).
+We welcome issue reports, suggestions, and especially pull requests:
+
+1. Fork the project
+2. Write your code in a feature branch
 3. Add tests (if applicable)
 4. Run tests (always!)
-5. Commit, push and send Pull Request.
-6. Receive maintainer's unending love.
+5. Commit, push and send Pull Request
 
-### Running tests
+Because this is a VividCortex internal tool that we're sharing publicly, we
+may not want to implement some features or fixes. One of the original authors
+maintains a [fork](https://github.com/pote/johnny-deps) that might have
+additional features.
 
-Yeap, we wrote tests for bash. f@#$% yeah!
+### Running Tests
+
+You can run the test suite as follows:
 
 ```
 $ make test
@@ -93,13 +103,12 @@ $ make test
 ## License
 
 Copyright (c) 2013 VividCortex.
-Released under MIT License, check LICENSE file for details.
+Released under the MIT License. Read the LICENSE file for details.
 
-## Authorship/Inspiration/Hugs
+## Contributors
 
-`Johnny_Deps` was written by [@pote](https://github.com/pote) - who maintains [a fork of this project](https://github.com/pote/johnny-deps) - for internal use in [Vivid Cortex](https://github.com/VividCortex) whose leadership have enthusiastically agreed to open source it. It is now maintained by [the VividCortex team](https://github.com/VividCortex?tab=members).
-
-The tool is inspired by Ruby's [dep gem](http://cyx.github.io/dep/) - authored by [@cyx](http://cyx.is/) and [@soveran](http://soveran.com/), big thanks to them and to all the contributions made by the many wonderful people in our [contributors page](https://github.com/VividCortex/johnny-deps/graphs/contributors).
-
+Johnny Deps is the combination of several different thought processes from
+multiple authors, with inspiration from tools such as Ruby's Bundler and dep
+gem, Python's pip, and others.
 
 ![Johnny Deps](http://i.imgur.com/MuupBVC.jpg)
