@@ -29,12 +29,12 @@ fi
 
 # Trim comments from lines in Depfile; ignore empty lines
 sed 's/#.*//;/^\s*$/d' "$depfile" \
-	| while read package sha branch junk; do
+	| while read package sha junk; do
 	if [ -z "$package" -o -z "$sha" ]; then
 		continue
 	fi
-	
-	# First, see if we're already at this SHA; if so, don't
+
+	# First, see if we're already at this SHA/branch/tag; if so, don't
 	# do a bunch of potentially messy things.
 	if [ ! -e "${GOPATH%%:*}/src/${package%%/...}" ]; then
 		echo ">> [johnny-deps] getting package "$package""
@@ -44,25 +44,20 @@ sed 's/#.*//;/^\s*$/d' "$depfile" \
 	if [ "$(git rev-parse HEAD)" = "${sha}" -o "$(git rev-parse --abbrev-ref HEAD)" = "${sha}" ]; then
 		continue
 	fi
-	echo ">> [johnny-deps] setting $package to version $sha"
-	git checkout -q "$sha"
 
-	# Try to avoid detached HEAD state, which is annoying. Checkout a branch if
-	# specified. If none, checkout master if possible; otherwise the first branch
-	# that contains the specified SHA.
-	if [ -n "${branch}" ]; then
-		echo ">> [johnny-deps] setting $package to branch $branch"
-		git checkout -q "${branch}"
-	elif [ $(git rev-parse --abbrev-ref HEAD) = "${sha}" ]; then
-		: The Godeps line was a branch instead of a SHA
-	else
-		if git branch --contains "${sha}" | grep master >/dev/null 2>&1; then
-			echo ">> [johnny-deps] setting $package to branch master"
-			git checkout -q master
-		else
-			branch=$(git branch --contains "${sha}" | grep -v 'no branch' | head -1)
+	# Check out the specified version. But, try to avoid detached HEAD, which
+	# is annoying; if any branch's HEAD is the specified SHA, then check out the
+	# branch instead.
+	echo ">> [johnny-deps] setting $package to version $sha"
+	if ! git checkout -q "$sha"; then
+		git pull -q
+		git checkout -q "$sha"
+	fi
+	git branch --contains "${sha}" | grep -v 'no branch' \
+		| sed -e 's/^\* //' | while read branch; do
+		if [ $(git rev-parse "$branch") = "$sha" ]; then
 			echo ">> [johnny-deps] setting $package to branch $branch"
 			git checkout -q "$branch"
 		fi
-	fi
+	done
 done
