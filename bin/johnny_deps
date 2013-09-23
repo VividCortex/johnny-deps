@@ -25,7 +25,6 @@ else
 	# Relative path; look for depfile in parent directories
 	where="$(/bin/pwd)"
 	while [ -n "$where" ]; do
-		echo ">> [johnny-deps] trying $where"
 		if [ -e "${where}/${depfile}" ]; then
 			depfile="${where}/${depfile}"
 			break
