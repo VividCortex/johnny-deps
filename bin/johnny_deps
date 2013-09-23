@@ -15,16 +15,27 @@ set -eu
 
 depfile="${1:-Godeps}"
 
-# Look for Depfile in parent directories
-if [ "${depfile%%/*}" != "/" ]; then # not absolute path
+if echo "$depfile" | grep '^/' &> /dev/null; then
+	# Absolute path; abort if not found
+	if [ ! -e "$depfile" ]; then
+		echo ">> [johnny-deps] depfile not found: $depfile"
+		exit 1
+	fi
+else
+	# Relative path; look for depfile in parent directories
 	where="$(/bin/pwd)"
 	while [ "${where}" != '/' ]; do
 		if [ -e "${where}/${depfile}" ]; then
 			depfile="${where}/${depfile}"
 			break
 		fi
-		where="${where%/*}" # dirname
+		where="$(dirname "$where")"
 	done
+
+	if [ ! -e "$depfile" ]; then
+		echo ">> [johnny-deps] no suitable depfile found"
+		exit 1
+	fi
 fi
 
 # Trim comments from lines in Depfile; ignore empty lines
