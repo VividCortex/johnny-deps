@@ -19,6 +19,27 @@ get_branch() {
 	cd "$here"
 }
 
-go list -f '{{join .Deps "\n"}}' ./... | sort -u | grep "\w*[.]\w*/" | while read dep ; do
-	printf "%-50s %s %s\n" $dep $(get_sha $dep) $(get_branch $dep)
-done
+# If a dependency is a subdirectory of a repo, print the repo with trailing
+# /... for the benefit of "go get"
+get_canonical_dep(){
+	package="$1"
+	GOPATH1="${GOPATH%%:*}"
+	path=$( cd "$GOPATH1/src/${package%%/...}" && git rev-parse --git-dir )
+	if [ "$path" = ".git" ]; then
+		echo "$package"
+		return
+	fi
+	path="${path##$GOPATH1/src/}"
+	echo "${path%%/.git}/..."
+}
+
+tempfile=$(mktemp /tmp/generate_deps.XXXX)
+go list -f '{{join .Deps "\n"}}' ./... | sort -u | grep "\w*[.]\w*/" > "$tempfile"
+
+while read dep ; do
+	sha=$(get_sha "$dep")
+	if [ "$sha" != "${prevsha:-}" ]; then
+		printf "%-50s %s %s\n" $(get_canonical_dep $dep) $(get_sha $dep) $(get_branch $dep)
+		prevsha="$sha"
+	fi
+done < "$tempfile"
