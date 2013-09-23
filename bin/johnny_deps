@@ -1,28 +1,68 @@
-#!/usr/bin/env bash
+#!/bin/sh
 
 # Copyright (c) 2013 VividCortex, Inc. All rights reserved.
 # Please see the LICENSE file for applicable license terms.
 
 set -eu
 
-## The Godeps file is expected to have lines like so:
+# The Godeps file is expected to have lines like so:
 #
-# github.com/VividCortex/robustly v2.6
+# github.com/VividCortex/robustly v2.6 master
 #
-## where the first element is the import path and the second is a tag
-## in the project.
+# where the first element is the import path and the second is a tag
+# in the project. There's an optional field, which is a branch, and any
+# other trailing junk is ignored.
 
-godeps=${1-"Godeps"}
-deps=$(sed 's/#.*//;/^\s*$/d' < "$godeps")
+depfile="${1:-Godeps}"
 
-while read package version rest; do
-  (
-    echo ">> Getting package "$package""
-    go get -u -d "$package"
-    echo ">> Setting $package to version $version"
-    cd "${GOPATH%%:*}/src/${package%%/...}"
-    git checkout -q "$version"
-  ) &
-done < <(echo "$deps")
+# Look for Depfile in parent directories
+if [ "${depfile%%/*}" != "/" ]; then # not absolute path
+	where="$(/bin/pwd)"
+	while [ "${where}" != '/' ]; do
+		if [ -e "${where}/${depfile}" ]; then
+			depfile="${where}/${depfile}"
+			break
+		fi
+		where="${where%/*}" # dirname
+	done
+fi
 
-wait
+# Trim comments from lines in Depfile; ignore empty lines
+sed 's/#.*//;/^\s*$/d' "$depfile" \
+	| while read package sha branch junk; do
+	if [ -z "$package" -o -z "$sha" ]; then
+		continue
+	fi
+	
+	# First, see if we're already at this SHA; if so, don't
+	# do a bunch of potentially messy things.
+	if [ ! -e "${GOPATH%%:*}/src/${package%%/...}" ]; then
+		echo ">> [johnny-deps] getting package "$package""
+		go get -u -d "$package"
+	fi
+	cd "${GOPATH%%:*}/src/${package%%/...}"
+	if [ "$(git rev-parse HEAD)" = "${sha}" -o "$(git rev-parse --abbrev-ref HEAD)" = "${sha}" ]; then
+		continue
+	fi
+	echo ">> [johnny-deps] setting $package to version $sha"
+	git checkout -q "$sha"
+
+	# Try to avoid detached HEAD state, which is annoying. Checkout a branch if
+	# specified. If none, checkout master if possible; otherwise the first branch
+	# that contains the specified SHA.
+	if [ -n "${branch}" ]; then
+		echo ">> [johnny-deps] setting $package to branch $branch"
+		git checkout -q "${branch}"
+	elif [ $(git rev-parse --abbrev-ref HEAD) = "${sha}" ]; then
+		: The Godeps line was a branch instead of a SHA
+	else
+		if git branch --contains "${sha}" | grep master >/dev/null 2>&1; then
+			echo ">> [johnny-deps] setting $package to branch master"
+			git checkout -q master
+		else
+			branch=$(git branch --contains "${sha}" | grep -v 'no branch' | head -1)
+			echo ">> [johnny-deps] setting $package to branch $branch"
+			git checkout -q "$branch"
+		fi
+	fi
+done
