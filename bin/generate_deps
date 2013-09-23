@@ -34,6 +34,7 @@ get_canonical_dep(){
 }
 
 tempfile=$(mktemp /tmp/generate_deps.XXXX)
+trap "rm -f '${tempfile}'" EXIT
 go list -f '{{join .Deps "\n"}}' ./... | sort -u | grep "\w*[.]\w*/" > "$tempfile"
 
 while read dep ; do
