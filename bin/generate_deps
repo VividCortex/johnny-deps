@@ -3,22 +3,33 @@
 # Copyright (c) 2013 VividCortex, Inc. All rights reserved.
 # Please see the LICENSE file for applicable license terms.
 
-set -eu
+get_repo_path()
+{(
+	IFS=':'
+	for d in $GOPATH; do
+		if [ ! -d "$d/src/$1" ]; then
+			continue
+		fi
 
-get_sha() {
-	here="$(pwd)"
-	cd "$GOPATH/src/$1"
-	git rev-parse HEAD
-	cd "$here"
-}
+		top=$(cd "$d/src/$1" && git rev-parse --show-toplevel 2> /dev/null)
+		if [ -z "$top" ]; then
+			echo "Unable to find Git repository at $d/src/$1" >&2
+			return 2
+		fi
+		echo ${top#$d/src/} $top
+		return 0
+	done
 
-get_branch() {
-	here="$(pwd)"
-	cd "$GOPATH/src/$1"
-	git rev-parse --abbrev-ref HEAD
-	cd "$here"
-}
+	echo "Unable to find $1 (check your GOPATH)" >&2
+	return 1
+)}
 
-go list -f '{{join .Deps "\n"}}' ./... | sort -u | grep "\w*[.]\w*/" | while read dep ; do
-	printf "%-50s %s %s\n" $dep $(get_sha $dep) $(get_branch $dep)
-done
+go list -f '{{join .Deps "\n"}}' ./... | sort -u | grep "\.\w*/" |
+	while read pkg; do
+		get_repo_path "$pkg" || exit $?
+	done | sort -k1,1 -u |
+	while read basepkg path; do
+		sha=$(cd $path && git rev-parse HEAD)
+		branch=$(cd $path && git rev-parse --abbrev-ref HEAD)
+		printf "%-50s %s %s\n" $basepkg/... "$sha" "$branch"
+	done
