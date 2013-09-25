@@ -16,7 +16,7 @@ get_repo_path()
 			echo "Unable to find Git repository at $d/src/$1" >&2
 			return 2
 		fi
-		echo $1 ${top#$d/src/} $top
+		echo ${top#$d/src/} $top
 		return 0
 	done
 
@@ -27,10 +27,9 @@ get_repo_path()
 go list -f '{{join .Deps "\n"}}' ./... | sort -u | grep "\.\w*/" |
 	while read pkg; do
 		get_repo_path "$pkg" || exit $?
-	done | sort -k1,1 -r | sort -m -u -k2,2 |
-	while read pkg basepkg path; do
+	done | sort -k1,1 -u |
+	while read basepkg path; do
 		sha=$(cd $path && git rev-parse HEAD)
 		branch=$(cd $path && git rev-parse --abbrev-ref HEAD)
-		[ "$pkg" != "$basepkg" ] && basepkg="$basepkg/..."
-		printf "%-50s %s %s\n" $basepkg "$sha" "$branch"
-	done | sort
+		printf "%-50s %s %s\n" $basepkg/... "$sha" "$branch"
+	done
