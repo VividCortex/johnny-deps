@@ -27,7 +27,7 @@ get_repo_path()
 go list -f '{{join .Deps "\n"}}' ./... | sort -u | grep "\.\w*/" |
 	while read pkg; do
 		get_repo_path "$pkg" || exit $?
-	done | sort -k1,1 -u |
+	done | grep -F -v " $(git rev-parse --show-toplevel)" | sort -k1,1 -u |
 	while read basepkg path; do
 		sha=$(cd $path && git rev-parse HEAD)
 		branch=$(cd $path && git rev-parse --abbrev-ref HEAD)
