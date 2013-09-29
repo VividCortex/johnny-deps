@@ -66,7 +66,7 @@ sed 's/#.*//;/^\s*$/d' "$depfile" \
 	fi
 	git branch --contains "${sha}" | grep -v -e 'no branch' -e 'detached from' \
 		| sed -e 's/^\* //' | while read branch; do
-		if [ $(git rev-parse "$branch") = "$sha" ]; then
+		if [ "$(git rev-parse "$branch")" = "$sha" ]; then
 			echo ">> [johnny-deps] setting $package to branch $branch"
 			git checkout -q "$branch"
 		fi
