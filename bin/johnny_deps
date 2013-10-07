@@ -61,7 +61,7 @@ sed 's/#.*//;/^\s*$/d' "$depfile" \
 	# branch instead.
 	echo ">> [johnny-deps] setting $package to version $sha"
 	if ! git checkout -q "$sha"; then
-		git pull -q
+		git fetch -q
 		git checkout -q "$sha"
 	fi
 	git branch --contains "${sha}" | grep -v -e 'no branch' -e 'detached from' \
