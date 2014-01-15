@@ -78,10 +78,11 @@ appropriate versions and build in a single step with something like:
 jd github.com/VividCortex/log
 ```
 
-Note that `jd build` will run `go build` at the project's root directory,
-*unless* there's an executable file named `build` there (the former takes
-precedence). In case there's such a build script, `jd` will simply run that
-file and fail if it returns anything other than zero.
+Note that `jd build` will run `go build` at the project's root directory.
+However, the `make` command will be run instead if a file called `Makefile` or
+`makefile` exists in that directory; or otherwise `build`, if such an executable
+file is found. In any case, `jd` will run the appropriate build command and fail
+if it returns anything other than zero.
 
 Extra logging can be added by using the global option `-v`. Otherwise the tool
 is completely silent (but setting an appropriate exit code), unless errors

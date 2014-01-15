@@ -19,9 +19,10 @@ my $depsfile = "Godeps";
 my $defcmd = "build";
 my @gopath;
 
-# Binaries for Git and Go
+# Binaries for Git, Go and make
 my $git = "git";
 my $go = "go";
+my $make = "make";
 
 # Level for last printed console message.
 my $lastlevel = -1;
@@ -375,11 +376,17 @@ sub build
 	chdir $projroot;
 	my $buildcmd;
 
-	if (-x "./build") {
+	if (-r "./makefile" || -r "./Makefile") {
+		show(VERBOSE, 1, "running make");
+		$buildcmd = "$make";
+	}
+	elsif (-x "./build") {
+		show(VERBOSE, 1, "running build");
 		$buildcmd = "./build";
 	}
 	else {
-		$buildcmd = "go build";
+		show(VERBOSE, 1, "running go build");
+		$buildcmd = "$go build";
 	}
 
 	run_or_die($buildcmd);
@@ -405,6 +412,12 @@ sub update
 		setup($dep, "master", $deproot);
 		run_or_die("cd '$deproot' && git pull");
 		$deps{$dep} = run_or_die("cd '$deproot' && git rev-parse HEAD");
+	}
+
+	unless (keys %deps) {
+		show(INFO, 0, "No dependencies found");
+		unlink "$projroot/$depsfile";
+		return;
 	}
 
 	show(INFO, 0, "Writing new dependencies");
@@ -434,6 +447,7 @@ Usage: jd [global-options] [command] [options] [project]
 
 Global options:
   -g <go>    Absolute path to main Go's binary (go)
+  -m <make>  Absolute path to make's binary
   -p <path>  Use <path> instead of the GOPATH environment variable
   -t <git>   Absolute path to Git's binary (git)
   -v         Be more verbose; use twice for a stronger effect
@@ -487,6 +501,13 @@ while (@ARGV && $ARGV[0] =~ /^-/) {
 			exit(1);
 		}
 		$go = shift @ARGV;
+	}
+	elsif ($opt eq "-m") {
+		unless (@ARGV && $ARGV[0] =~ m!^/! && -x $ARGV[0]) {
+			show(ERROR, 0, "Expecting absolute path to make for -m");
+			exit(1);
+		}
+		$make = shift @ARGV;
 	}
 	elsif ($opt eq "-p") {
 		unless (@ARGV) {
