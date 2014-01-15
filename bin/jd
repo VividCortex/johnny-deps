@@ -1,0 +1,600 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+
+use Cwd;
+use List::Util qw(first);
+
+use constant {
+	ERROR   => 0,
+	INFO    => 1,
+	VERBOSE => 2,
+};
+
+use constant TABSIZE => 2;
+
+my $loglevel = ERROR;
+my $depsfile = "Godeps";
+my $defcmd = "build";
+my @gopath;
+
+# Binaries for Git and Go
+my $git = "git";
+my $go = "go";
+
+# Level for last printed console message.
+my $lastlevel = -1;
+
+# Options
+my $prefer_detached = 0;
+
+sub show
+{
+	my ($level, $indent, @lines) = @_;
+
+	if ($loglevel >= $level) {
+		# We want error messages to stand out
+		my $levelchange = $lastlevel >= 0 && $level != $lastlevel;
+		print "\n" if $levelchange && ($level == ERROR || $lastlevel == ERROR);
+		$lastlevel = $level;
+
+		my $spaces = ' ' x ($indent * TABSIZE);
+		print $spaces, $_, "\n" foreach (@lines);
+	}
+}
+
+sub run
+{
+	my $cmd = shift;
+	my @output = `($cmd) 2>&1`;
+	my ($output, $err);
+
+	if ($? == 0) {
+		chomp foreach (@output);
+		$output = \@output;
+	}
+	elsif ($? == -1) {
+		$err = "Unable to run: $cmd";
+	}
+	elsif ($? & 127) {
+		$err = "Killed by signal: $cmd";
+	}
+	else {
+		chomp foreach (@output);
+		$output = \@output;
+		$err = "Aborted with " . ($? >> 8) . ": $cmd";
+	}
+
+	return ($output, $err);
+}
+
+sub run_or_die
+{
+	my ($cmd) = @_;
+	my ($output, $err) = run($cmd);
+
+	if (defined $err) {
+		show(ERROR, 0, $err);
+		show(ERROR, 0, "Current directory: " . cwd());
+
+		if (defined $output) {
+			show(ERROR, 0, "Command output follows:");
+			show(ERROR, 0, @$output);
+		}
+
+		exit(4);
+	}
+
+	return @$output if wantarray;
+	return @$output ? $$output[0] : "";
+}
+
+sub grep_refs
+{
+	my ($refs, $prefix) = @_;
+	return map { (my $s = $_) =~ s#^\Q$prefix##; $s } grep m#^\Q$prefix#, @$refs;
+}
+
+sub choose_remote
+{
+	my @remotes = @_;
+	my %remotes = ();
+	$remotes{$_} = 1 foreach (@remotes);
+
+	my @output = run_or_die("$git for-each-ref " .
+		"--format='%(refname:short)%00%(upstream:short)' refs/heads");
+	my @branches = map { [split /\x00/] } @output;
+
+	# We favor any local branch X tracking one of the remotes <origin>/X
+	my $choice = first {
+		@$_ > 1 && exists $remotes{$$_[1]} && $$_[1] =~ m!^[^/]+/\Q$$_[0]\E$!
+	} @branches;
+	return $$choice[1], $$choice[0] if defined $choice;
+
+	# If there's none, we choose <origin>/X where X doesn't exist locally
+	my %locals = ();
+	$locals{$_} = 1 foreach (map { $$_[0] } @branches);
+
+	return (first {
+			(my $b = $_) =~ s!^[^/]+/!!;
+			!exists $locals{$b}
+		} @remotes), undef
+}
+
+sub setup
+{
+	my ($project, $version, $projroot) = @_;
+
+	unless ($project =~ m#^github\.com/#) {
+		show(ERROR, 0, "Don't know how to deal with $project");
+		exit(4);
+	}
+
+	unless (-d $projroot) {
+		show(VERBOSE, 1, "cloning to $projroot");
+		(my $location = $project) =~ s#/#:#;
+		run_or_die("$git clone git\@$location.git '$projroot'");
+	}
+
+	chdir $projroot;
+	my $current = run_or_die("$git rev-parse HEAD");
+	my ($output, $err) = run("$git rev-parse '$version'");
+
+	if (!defined $err && $current eq $$output[0]) {
+		# Already set to required version
+		return;
+	}
+
+	(undef, $err) = run("$git diff-index --quiet HEAD --");
+
+	if (defined $err) {
+		show(ERROR, 0, "Working directory for $project is NOT clean; refusing to checkout.");
+		show(ERROR, 0, "Please revert your changes or stash them away.");
+		exit(5);
+	}
+
+	show(VERBOSE, 1, "checking out $version");
+	($output, $err) = run("$git show -s --pretty=%d --decorate=full '$version' --");
+
+	if (defined $err) {
+		# The commit is probably not available locally
+		show(VERBOSE, 2, "fetching latest changes");
+		run_or_die("$git fetch");
+		($output, $err) = run("$git show -s --pretty=%d --decorate=full '$version' --");
+
+		if (defined $err) {
+			show(ERROR, 0, "Revision $version not available for $project");
+			exit(5);
+		}
+	}
+
+	if ($prefer_detached || run_or_die("$git rev-parse --symbolic-full-name '$version'")) {
+		# Non-empty rev-parse means $version is a symbolic ref (branch/tag)
+		run_or_die("$git checkout '$version'");
+		return;
+	}
+
+	(my $refs = $$output[0]) =~ s/^\s*\((.*)\)\s*$/$1/;
+	my @refs = grep !m#(^|/)HEAD$#, split /,\s*/, $refs;
+
+	my $show_others = sub {
+		show(VERBOSE, 1, "warning: other option(s) available:");
+		show(VERBOSE, 2, @_);
+	};
+
+	if (my @locals = grep_refs(\@refs, "refs/heads/")) {
+		my $branch = shift @locals;
+		show(VERBOSE, 1, "using local branch $branch");
+		&$show_others(@locals) if @locals;
+		run_or_die("$git checkout '$branch'");
+	}
+	elsif (my @remotes = grep_refs(\@refs, "refs/remotes/")) {
+		my ($remote, $local) = choose_remote(@remotes);
+
+		unless (defined $remote) {
+			show(ERROR, 0, "Unable to select appropriate branch for $project");
+			show(ERROR, 0, "Remote branch(es) at the correct revision:");
+			show(ERROR, 1, @remotes);
+			show(ERROR, 0, "");
+			show(ERROR, 0, "Expecting local branch X for some <remote>/X not to exist,");
+			show(ERROR, 0, "or otherwise be set to track <remote>/X.");
+			show(ERROR, 0, "Use get's option -d to checkout in detached head mode.");
+			exit(5);
+		}
+
+		show(VERBOSE, 1, "choosing remote branch $remote");
+		my @others = grep { $_ ne $remote } @remotes;
+		&$show_others(@others) if @others;
+
+		if (defined $local) {
+			# There's a local branch by that name already
+			show(VERBOSE, 1, "using local branch $local after merge");
+			run_or_die("$git checkout '$local'");
+			run_or_die("$git merge 'refs/remotes/$remote'");
+		}
+		else {
+			# No local branch by that name
+			(undef, $local) = split m!/!, $remote, 2;
+			show(VERBOSE, 1, "setting up new local branch $local");
+			run_or_die("$git checkout -b '$local' -t 'refs/remotes/$remote'");
+		}
+	}
+	elsif (my @tags = grep_refs(\@refs, "refs/tags/")) {
+		my $tag = shift @tags;
+		show(VERBOSE, 1, "revision tagged with $tag");
+		&$show_others(@tags) if @tags;
+		run_or_die("$git checkout '$tag'");
+	}
+	else {
+		run_or_die("$git checkout '$version'");
+	}
+}
+
+sub get_compiler_deps
+{
+	my ($project, $projroot) = @_;
+	my $oldcwd = cwd();
+	chdir $projroot;
+
+	my $template = '{{join .Imports "\n"}}';
+	my @deps = grep m!^github\.com/!,
+		run_or_die("$go list -f '$template' ./... | sort -u");
+	my %projects;
+
+	foreach (@deps) {
+		s!^(github.com/[^/]+/[^/]+).*!$1!;
+		$projects{$_} = 1 unless $_ eq $project;
+	}
+
+	chdir $oldcwd;
+	return sort keys %projects;
+}
+
+sub read_deps_file {
+	my ($project, $file) = @_;
+
+	unless (open(DEPS, "<", $file)) {
+		show(ERROR, 0, "Unable to open dependencies for $project: $!");
+		exit(2);
+	}
+
+	my $line = 0;
+	my %deps;
+
+	while (<DEPS>) {
+		$line++;
+		next if /^\s*$/ || /^\s*#/;
+		my ($p, $v) = split;
+		$p =~ s#/\.\.\.$##; # For backwards compatibility
+
+		unless (length $v) {
+			# We don't skip bad lines; we want the developer to check
+			show(ERROR, 0, "Bad dependency for $project at line $line");
+			exit(2);
+		}
+
+		if (exists $deps{$p}) {
+			if ($deps{$p} eq $v) {
+				show(ERROR, 0, "Warning: duplicate entry for $p at $project");
+			}
+			else {
+				show(ERROR, 0, "Version mismatch for $p at $project");
+				exit(3);
+			}
+		}
+		$deps{$p} = $v;
+	}
+
+	close(DEPS);
+	return %deps;
+}
+
+sub check_deps
+{
+	my ($project, $projroot) = @_;
+
+	my %deps_go;
+	$deps_go{$_} = 1 foreach (get_compiler_deps($project, $projroot));
+	my %deps_file = read_deps_file($project, "$projroot/$depsfile");
+
+	my @missing = sort grep !exists $deps_file{$_}, keys %deps_go;
+	my @extra = sort grep !exists $deps_go{$_}, keys %deps_file;
+
+	if (@missing) {
+		show(ERROR, 0, "Package(s) missing from $depsfile:");
+		show(ERROR, 1, @missing);
+	}
+	if (@extra) {
+		show(ERROR, 0, "Not-required package(s) in $depsfile:");
+		show(ERROR, 1, @extra);
+	}
+
+	exit(2) if @missing || @extra;
+}
+
+sub get
+{
+	my ($project, $version, $projroot) = @_;
+	my @pending = ($project);
+	my %data = (
+		$project => {
+			version => $version,
+			usedby  => [],
+		}
+	);
+
+	while (defined(my $project = shift @pending)) {
+		show(INFO, 0, "Setting up $project");
+		my $projroot = first { -d $_ } map { "$_/src/$project" } @gopath;
+		$projroot = "$gopath[0]/src/$project" unless defined $projroot;
+		setup($project, $data{$project}{version}, $projroot);
+
+		my $file = "$projroot/$depsfile";
+
+		unless (-f $file) {
+			# No further dependencies
+			show(VERBOSE, 1, "dependencies file not found");
+			next;
+		}
+
+		my %deps = read_deps_file($project, $file);
+
+		while (my ($p, $v) = each %deps) {
+			show(VERBOSE, 1, "depends on $p at $v");
+
+			if (!exists $data{$p}) {
+				$data{$p} = {
+					version => $v,
+					usedby  => [$project],
+				};
+				push @pending, $p;
+			}
+			elsif ($v eq $data{$p}{version}) {
+				push @{$data{$p}{usedby}}, $project;
+			}
+			else {
+				show(ERROR, 0, "Version mismatch detected for $p");
+				show(ERROR, 1, "$data{$p}{version} referenced by:");
+				show(ERROR, 2, $_) foreach (sort @{$data{$p}{usedby}});
+				show(ERROR, 1, "but $v referenced by $project");
+				exit(3);
+			}
+		}
+	}
+
+	check_deps($project, $projroot);
+}
+
+sub build
+{
+	my ($project, $version, $projroot) = @_;
+
+	get($project, $version, $projroot);
+	show(INFO, 0, "Building");
+	chdir $projroot;
+	my $buildcmd;
+
+	if (-x "./build") {
+		$buildcmd = "./build";
+	}
+	elsif (-x "./build.sh") {
+		$buildcmd = "./build.sh";
+	}
+	else {
+		$buildcmd = "go build";
+	}
+
+	run_or_die($buildcmd);
+}
+
+sub update
+{
+	my ($project, undef, $projroot) = @_;
+
+	unless (-d $projroot) {
+		show(ERROR, 0, "Unable to update a non-existing project.");
+		show(ERROR, 0, "Try 'jd get' first.");
+		exit(1);
+	}
+
+	my @deps = get_compiler_deps($project, $projroot);
+	my %deps;
+
+	foreach my $dep (@deps) {
+		show(INFO, 0, "Updating $dep");
+		my $deproot = first { -d $_ } map { "$_/src/$dep" } @gopath;
+		$deproot = "$gopath[0]/src/$dep" unless defined $deproot;
+		setup($dep, "master", $deproot);
+		run_or_die("cd '$deproot' && git pull");
+		$deps{$dep} = run_or_die("cd '$deproot' && git rev-parse HEAD");
+	}
+
+	show(INFO, 0, "Writing new dependencies");
+	open(DEPS, ">", "$projroot/$depsfile") or do {
+		show(ERROR, 0, "Unable to write $depsfile: $!");
+		exit(1);
+	};
+
+	foreach my $dep (sort keys %deps) {
+		show(VERBOSE, 1, $dep);
+		print DEPS "$dep $deps{$dep}\n";
+	}
+
+	close(DEPS);
+
+	show(INFO, 0, "Checking consistency");
+	my $version = run_or_die("cd '$projroot' && $git rev-parse HEAD");
+	my $prev_loglevel = $loglevel;
+	$loglevel = ERROR; # We don't need to be too verbose when checking
+	get($project, $version, $projroot);
+	$loglevel = $prev_loglevel;
+}
+
+my $helptext = <<END;
+
+Usage: jd [global-options] [command] [options] [project]
+
+Global options:
+  -g <go>    Absolute path to main Go's binary (go)
+  -p <path>  Use <path> instead of the GOPATH environment variable
+  -t <git>   Absolute path to Git's binary (git)
+  -v         Be more verbose; use twice for a stronger effect
+
+Command:
+  build      Build the project with go build or build.sh as appropriate
+  get        Retrieve all (transitive) project dependencies
+  update     Pin first-level dependencies to most current versions
+  help       Show this help message
+
+  (If not provided, command defaults to $defcmd.)
+
+Project:
+  Specified just like in the dependencies file (Godeps). If no project
+  is provided, jd searches for a project in the current directory.
+
+Options for build:
+  -d         Use -d when running get.
+  -r <rev>   Use -r <rev> when running get.
+
+Options for get:
+  -d         Don't aim for branches/tags; work in detached head mode.
+  -r <rev>   Checkout revision <rev> for main project.
+
+END
+
+sub help
+{
+	print $helptext;
+}
+
+my %subcmd = (
+	get    => \&get,
+	build  => \&build,
+    update => \&update,
+    help   => \&help,
+);
+my $cmd = $defcmd;
+my $version;
+my $project;
+my $projroot;
+
+my $gopath = $ENV{"GOPATH"};
+
+while (@ARGV && $ARGV[0] =~ /^-/) {
+	my $opt = shift @ARGV;
+	
+	if ($opt eq "-g") {
+		unless (@ARGV && $ARGV[0] =~ m!^/! && -x $ARGV[0]) {
+			show(ERROR, 0, "Expecting absolute path to go for -g");
+			exit(1);
+		}
+		$go = shift @ARGV;
+	}
+	elsif ($opt eq "-p") {
+		unless (@ARGV) {
+			show(ERROR, 0, "Expecting argument for -p");
+			exit(1);
+		}
+		$gopath = shift @ARGV;
+	}
+	elsif ($opt eq "-t") {
+		unless (@ARGV && $ARGV[0] =~ m!^/! && -x $ARGV[0]) {
+			show(ERROR, 0, "Expecting absolute path to git for -t");
+			exit(1);
+		}
+		$git = shift @ARGV;
+	}
+	elsif ($opt eq "-v") {
+		$loglevel++;
+	}
+	else {
+		show(ERROR, 0, "Unrecognized option: $opt");
+		exit(1);
+	}
+}
+
+if (@ARGV && exists $subcmd{$ARGV[0]}) {
+	$cmd = $ARGV[0];
+	shift;
+
+	# Special case, so we avoid all checks
+	do { help(); exit(0) } if $cmd eq "help";
+}
+
+@gopath = split /:/, $gopath;
+
+if (!@gopath) {
+	show(ERROR, 0, "Please set GOPATH");
+	exit(1);
+}
+elsif ($gopath[0] eq $ENV{"GOROOT"}) {
+	show(ERROR, 0, "Refusing to run with GOROOT included in GOPATH; don't do that");
+	show(ERROR, 0, "With appropriate permissions, you may mess your Go installation");
+	exit(1);
+}
+
+# Process command-specific options
+while (@ARGV && $ARGV[0] =~ /^-/) {
+	my $opt = shift @ARGV;
+
+	if ($cmd eq "build" || $cmd eq "get") {
+		if ($opt eq "-d") {
+			$prefer_detached = 1;
+			next;
+		}
+		if ($opt eq "-r") {
+			unless (@ARGV && $ARGV[0] !~ m!^-!) {
+				show(ERROR, 0, "Expecting a release after -r");
+				exit(1);
+			}
+			$version = shift @ARGV;
+			next;
+		}
+	}
+
+	show(ERROR, 0, "Unrecognized option for $cmd: $opt");
+	exit(1);
+}
+
+if (@ARGV) {
+	# Project present in command line
+	$project = $ARGV[0];
+	$projroot = first { -d $_ } map { "$_/src/$project" } @gopath;
+
+	if (defined $projroot) {
+		unless (`cd "$projroot" && $git rev-parse --show-toplevel 2> /dev/null`) {
+			show(ERROR, 0, "Project in $projroot is not under version control");
+			exit(1);
+		}
+
+		$version = run_or_die("cd '$projroot' && $git rev-parse HEAD")
+			unless defined $version;
+	}
+	else {
+		$projroot = "$gopath[0]/src/$project";
+	}
+}
+else {
+	# No project specified; let's try to get it from current directory
+	chomp($projroot = `$git rev-parse --show-toplevel 2> /dev/null`);
+	unless ($projroot) {
+		show(ERROR, 0, "Not under version-controlled directory");
+		exit(1);
+	}
+
+	my $base = first { $projroot =~ m!^\Q$_\E($|/)! } map { "$_/src" } @gopath;
+	unless (defined $base) {
+		show(ERROR, 0, "Please specify a project or cd into a project directory");
+		exit(1);
+	}
+
+	($project = substr $projroot, length $base) =~ s!^/*!!;
+	$version = run_or_die("cd '$projroot' && $git rev-parse HEAD")
+		unless defined $version;
+}
+
+$version = "master" unless defined $version;
+&{$subcmd{$cmd}}($project, $version, $projroot);
+
+exit(0);
