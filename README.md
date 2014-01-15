@@ -79,9 +79,9 @@ jd github.com/VividCortex/log
 ```
 
 Note that `jd build` will run `go build` at the project's root directory,
-*unless* there's an executable file named `build` or `build.sh` there (the
-former takes precedence). In case there's such a build script, `jd` will simply
-run that file and fail if it returns anything other than zero.
+*unless* there's an executable file named `build` there (the former takes
+precedence). In case there's such a build script, `jd` will simply run that
+file and fail if it returns anything other than zero.
 
 Extra logging can be added by using the global option `-v`. Otherwise the tool
 is completely silent (but setting an appropriate exit code), unless errors
@@ -98,14 +98,6 @@ behavior by providing the `-d` switch to `get` or `build`.
 Run `jd help` for details.
 
 ### Installation
-
-You can run Johnny Deps directly from the web without installing it. We do this
-in our CircleCI tests in many cases. Here's an example of using the latest
-master; though you can use any specific version, too:
-
-```
-$ curl -s https://raw.github.com/VividCortex/johnny-deps/master/bin/jd | sh
-```
 
 To install, clone the repo and then run:
 
@@ -162,9 +154,7 @@ We welcome issue reports, suggestions, and especially pull requests:
 5. Commit, push and send Pull Request
 
 Because this is a VividCortex internal tool that we're sharing publicly, we
-may not want to implement some features or fixes. One of the original authors
-maintains a [fork](https://github.com/pote/johnny-deps) that might have
-additional features.
+may not want to implement some features or fixes.
 
 ### TODO
 
@@ -182,8 +172,7 @@ Released under the MIT License. Read the LICENSE file for details.
 
 Johnny Deps is the combination of several different thought processes from
 multiple authors, with inspiration from tools such as Ruby's Bundler and dep
-gem, Python's pip, and others. Give credit to [@pote](https://github.com/pote)
-and blame to [@xaprb](https://github.com/xaprb) and
-[@gkristic](https://github.com/gkristic).
+gem, Python's pip, and others. Give credit to [@xaprb](https://github.com/xaprb)
+and [@gkristic](https://github.com/gkristic).
 
 ![Johnny Deps](http://i.imgur.com/MuupBVC.jpg)
