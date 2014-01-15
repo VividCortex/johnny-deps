@@ -378,9 +378,6 @@ sub build
 	if (-x "./build") {
 		$buildcmd = "./build";
 	}
-	elsif (-x "./build.sh") {
-		$buildcmd = "./build.sh";
-	}
 	else {
 		$buildcmd = "go build";
 	}
