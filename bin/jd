@@ -253,6 +253,7 @@ sub get_compiler_deps
 
 sub read_deps_file {
 	my ($project, $file) = @_;
+	return () unless -f $file;
 
 	unless (open(DEPS, "<", $file)) {
 		show(ERROR, 0, "Unable to open dependencies for $project: $!");
@@ -331,14 +332,13 @@ sub get
 		setup($project, $data{$project}{version}, $projroot);
 
 		my $file = "$projroot/$depsfile";
+		my %deps = read_deps_file($project, $file);
 
-		unless (-f $file) {
+		unless (keys %deps) {
 			# No further dependencies
-			show(VERBOSE, 1, "dependencies file not found");
+			show(VERBOSE, 1, "no dependencies found");
 			next;
 		}
-
-		my %deps = read_deps_file($project, $file);
 
 		while (my ($p, $v) = each %deps) {
 			show(VERBOSE, 1, "depends on $p at $v");
