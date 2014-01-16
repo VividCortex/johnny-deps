@@ -134,8 +134,7 @@ sub setup
 
 	unless (-d $projroot) {
 		show(VERBOSE, 1, "cloning to $projroot");
-		(my $location = $project) =~ s#/#:#;
-		run_or_die("$git clone git\@$location.git '$projroot'");
+		run_or_die("$git clone https://$project.git '$projroot'");
 	}
 
 	chdir $projroot;
