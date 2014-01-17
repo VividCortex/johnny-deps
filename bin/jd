@@ -489,8 +489,6 @@ my $version;
 my $project;
 my $projroot;
 
-my $gopath = $ENV{"GOPATH"};
-
 while (@ARGV && $ARGV[0] =~ /^-/) {
 	my $opt = shift @ARGV;
 	
@@ -513,7 +511,8 @@ while (@ARGV && $ARGV[0] =~ /^-/) {
 			show(ERROR, 0, "Expecting argument for -p");
 			exit(1);
 		}
-		$gopath = shift @ARGV;
+		# We overrithe GOPATH in case we run 'go'
+		$ENV{"GOPATH"} = shift @ARGV;
 	}
 	elsif ($opt eq "-t") {
 		unless (@ARGV && $ARGV[0] =~ m!^/! && -x $ARGV[0]) {
@@ -539,13 +538,15 @@ if (@ARGV && exists $subcmd{$ARGV[0]}) {
 	do { help(); exit(0) } if $cmd eq "help";
 }
 
-@gopath = split /:/, $gopath;
-
-if (!@gopath) {
-	show(ERROR, 0, "Please set GOPATH");
+my $gopath = $ENV{"GOPATH"};
+unless (defined $gopath && $gopath) {
+	show(ERROR, 0, "Please set GOPATH or use option -p");
 	exit(1);
 }
-elsif ($gopath[0] eq $ENV{"GOROOT"}) {
+
+@gopath = split /:/, $gopath;
+
+if (defined $ENV{"GOROOT"} && $gopath[0] eq $ENV{"GOROOT"}) {
 	show(ERROR, 0, "Refusing to run with GOROOT included in GOPATH; don't do that");
 	show(ERROR, 0, "With appropriate permissions, you may mess your Go installation");
 	exit(1);
