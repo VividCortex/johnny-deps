@@ -1,38 +1,39 @@
 # Johnny Deps ![Build Status](https://circleci.com/gh/VividCortex/johnny-deps.png?circle-token=426f85f6d52ca0b308d1f6aab01dd219afdb4cb0)
 
-Johnny Deps is a small tool from [VividCortex](https://vividcortex.com)
-that provides minimalistic dependency versioning for Go repositories using Git.
-Its primary purpose is to help create reproducible builds when many import paths in
+Johnny Deps is a small tool from [VividCortex](https://vividcortex.com) that
+provides minimalistic dependency versioning for Go repositories using Git. Its
+primary purpose is to help create reproducible builds when many import paths in
 various repositories are required to build an application. It's based on a Perl
-script that provides subcommands for retrieving (get) or building a project, or
+script that provides subcommands for retrieving or building a project, or
 updating a dependencies file (called `Godeps`), listing first-level imports for
 a project.
 
-## Getting Started
+## Getting started
 
-To retrieve a package with its full set of (transitive) dependencies, run `jd`
-with the `get` subcommand. The package is provided as an argument, like in this
-example:
-
-```
-jd get github.com/VividCortex/dbcontrol
-```
-
-The `get` command will clone the project, as well as all dependencies listed in
-its `Godeps` file. The process continues recursively until no new dependencies
-are found. If two different versions of a project are included from the full set
-of dependencies, `jd` stops and reports the offending inclusion, like so:
+Install Johnny Deps by cloning the project's Github repository and running the
+provided scripts, like this:
 
 ```
-Version mismatch detected for github.com/VividCortex/ewma
-  a46680db5abe56b6df709c0bd34e556424008dab referenced by:
-    github.com/VividCortex/sample
-  but 7394084dd6e04369a564863509c3cac2b4bead5a referenced by github.com/VividCortex/robustly
+git clone https://github.com/VividCortex/johnny-deps.git
+cd johnny-deps
+./configure --prefix=/your/path
+make install
 ```
 
-If you need to set up your environment for a different version of your project,
-you can specify a particular branch, tag or even commit id with the `-r` option
-to `get`. Here's how a `Godeps` looks like:
+The `--prefix` option to `configure` is not mandatory; it defaults to
+`/usr/local` if not provided (but you'd have to install as root in that case).
+The binary will end up at the `bin` subdirectory, under the prefix you choose;
+make sure you have that location specified in your `PATH`.
+
+Note that Perl is required, although that's probably provided by your system
+already. Also Go, Git and (if you're using makefiles) Make.
+
+## Dependencies
+
+Johnny Deps is all about project dependencies. Each project should have a file
+called Godeps at its root, listing the full set of first-level dependencies;
+i.e., all repositories with Go packages imported directly by this project. The
+file may be omitted when empty and looks like this:
 
 ```
 github.com/VividCortex/godaemon 2fdf3f9fa715a998e834f09e07a8070d9046bcfd
@@ -40,109 +41,229 @@ github.com/VividCortex/log 1ffbbe58b5cf1bcfd7a80059dd339764cc1e3bff
 github.com/VividCortex/mysql f82b14f1073afd7cb41fc8eb52673d78f481922e
 ```
 
-Depending on your workflow (see "Workflows" below) you may choose to list a
-commit id (or tag), or simply a branch name. Essentially anything that Git can
-checkout is legal, including abbreviated commit identifiers. Lines starting with
-`#` are regarded as comments and thus ignored.
+The first column identifies the dependency. The second is the commit identifier
+for the exact revision the current project depends upon. You can use any
+identifier Git would accept to checkout, including abbreviated commits, tags and
+branches. Note, however, that the use of branches is discouraged, cause it leads
+to non-reproducible builds as the tip of the branch moves forward.
 
-Even though you can create a `Godeps` file by hand, `jd` provides a command to
-automate the task: `update`. Running `jd update` on a project triggers a pull on
-all first-level dependencies, whose latest (master) releases are then written to
-a new `Godeps` file. Note that this process does *not* rely on the previous
-file, but uses `go list` instead. A nice consequence is that new dependencies
-are automatically detected from the code and added to `Godeps`, with no manual
-intervention required. Note also that, although the old dependencies file is
+## Introducing the tool
+
+`jd` is Johnny Deps' main binary. It's a command line tool to retrieve projects
+from Github, check dependencies, reposition local working copies according to
+each project's settings, building and updating. It accepts subcommands much like
+`go` or `git` do:
+
+```
+jd [global-options] [command] [options] [project]
+```
+
+Global options apply to all commands. Some allow you to change the external
+tools that are used (go, git and make) in case you don't have them in your path,
+or otherwise want to use a different version. There's also a `-v` option to
+increase verbosity, that you can provide twice for extra effect. (Note that the
+tool runs silently by default, only displaying errors, if any.)
+
+It's worth noting that all parameters are optional. If you don't specify a
+command, it will default to `build` (see "Building" below). If you don't specify
+a project, `jd` will try to infer the project based on your current working
+path, and your setting for `GOPATH`. If you're in a subdirectory of any of the
+`GOPATH` components, and you're also in a Git working tree, `jd` would be happy
+to fill up the project for you.
+
+When in doubt, check `jd help`.
+
+## Retrieving projects
+
+Retrieving a Go application with Johnny Deps is just as easy as retrieving a
+single base project. Run `jd get` and the full application, with all transitive
+dependencies, will be set up in your environment. Here's what we'd type for one
+of our applications:
+
+```
+jd get github.com/VividCortex/api-hosts
+```
+
+Johnny Deps will look for all required projects in your `GOPATH`, and download
+those missing to the first component of `GOPATH`. It will even create the
+directory stated in your `GOPATH` if it doesn't yet exist. As `jd` traverses the
+graph of dependencies, it checks whether version conflicts exist. If it happens
+to detect one, it will abort with a message like this:
+
+```
+Version mismatch detected for github.com/VividCortex/core
+  561c9e9798307b875b8f90b89b7888eae4a983ce referenced by:
+    github.com/VividCortex/api-hosts
+    github.com/VividCortex/config
+    github.com/VividCortex/nap
+  but dfe3ff5362d778214272b56e2afcca0d96651911 referenced by github.com/VividCortex/shard
+```
+
+Here, the tool is telling you that two different versions of `core` are being
+included. The first is the commit identifier at the top, that is shared as a
+dependency for the three projects that follow. But `shard`, on the other hand,
+is including a different commit for `core`, shown at the last line. If no
+version mismatch is found, you'll end up with all projects required to build the
+application you were interested in (`api-hosts` in the example above).
+
+Besides retrieving required projects, `jd get` will reposition local copies
+(whether they existed already or were just cloned) to the version stated in
+`Godeps` files. Furthermore, if you're aiming at a specific commit (as
+recommended), `jd` does an extra effort trying to checkout a branch whose tip
+matches that commit, as opposed to leaving you in a detached HEAD state. That's
+most probably what you want, cause it's probably a work in progress and you'll
+be adding commits to that branch. (If you prefer a detached HEAD instead,
+provide the `-d` flag to `get`.)
+
+When choosing a branch to checkout for a given commit identifier, `jd` will
+first search among all locals. If there's none whose tip matches the commit,
+`jd` will try remote tracking branches instead. Among those matching, `jd`
+selects one with a local branch by the same name, having the remote as an
+upstream branch. If there's one available, that remote branch is merged into the
+local, and the latter is checked out for use. Otherwise, `jd` keeps one of the
+matching remotes with no local branch by the same name, and checks out a new
+local branch with that remote set as upstream. (If local branches existed for
+all candidate remotes, but none of them had the remote by the same name set as
+upstream, then `jd` would abort with an appropriate message. In that case you
+should either review your local branches, cause there's possibly an upstream
+setting missing, or otherwise use `-d` to checkout in detached HEAD mode.) In
+any case, if there's more than one choice and you're running with double `-v`,
+you'd get a message displaying the other options as well.
+
+It's worth noting that `jd` favors local operations as much as possible, to
+avoid long round-trips to remote repositories. Hence, remotes won't be fetched
+if the required revision is found locally. (That's particularly relevant when
+including a branch name at the `Godeps` file cause, if found locally, the branch
+will not be updated with remote changes.) Note also that, unless it actually
+needs to move to a different release, `jd` will not insist in that your working
+copy is clean. This is good from a developer's point of view, cause it allows
+you to play with the application, trying modifications or fixes in the whole
+code base, without `jd` complaining.
+
+If the project you're interested in is not present in `GOPATH`, `jd get` will
+clone it from the remote repository and checkout the master branch. But once you
+have a local copy, `jd` will never checkout a different revision. (It will
+change revisions for dependencies, but not for the main project you provide to
+`jd get`.) You may reposition the working copy to your liking using Git
+commands; `jd` will be happy to adjust dependencies accordingly. However, if you
+want to force your main project into a specific revision, even before you have a
+local copy, you can use the `-r` parameter to `jd get`, like so:
+
+```
+jd get github.com/VividCortex/api-hosts -r my-release
+```
+
+where the argument to `-r` can be anything you can checkout from Git: a commit
+identifier (abbreviated or not), a branch or a tag.
+
+After working copies for all projects in the application are set, `jd get` runs
+a check on first level dependencies for the main project (i.e., the one either
+you specified on the command line, or `jd` inferred from your current
+directory). The check is run against the result of `go list`. `jd` will complain
+if the sets don't match exactly, displaying both missing and not required
+projects. If that's the case, you need to fix your `Godeps` file (see "Updating"
+below).
+
+## Building
+
+Since building is what you'll be doing most of the time, `jd` conveniently
+defaults to `build` if no command is provided. Furthermore, `jd` may be able to
+retrieve the project out of your current working directory (see "Introducing the
+tool" above). Hence, you'd typically be able to compile by typing only `jd` at
+the command prompt. Not even your location within the project tree matters; the
+tool works equally fine if run from deep inside the hierarchy.
+
+Before the actual building process, `jd` runs the equivalent of a `jd get`
+command. That's how it makes sure that you're actually using the correct
+versions of all dependencies. (Keep in mind, though, that if your local copies
+were already set to the correct revisions, it's okay to have local changes; even
+in `Godeps` files.) The implicit `get` run by `build`, and the choice of `build`
+as the default command, make the tool particularly easy to use to build projects
+you don't even have. The following command retrieves the full dependencies for
+the application and builds:
+
+```
+jd github.com/VividCortex/api-hosts
+```
+
+Furthermore, since the `-r` option to `build` is actually passed along to the
+implicit `get`, you can readily set up a specific version by appending the
+appropriate `-r` to the command above. (The same behavior goes to the `-d`
+option to `build`.)
+
+Johnny Deps calls `go build` at the project's root to build. But, in order to
+accommodate special needs, `jd` first checks for specific instructions,
+resorting to `go build` if there's none. The highest priority goes to the Make
+utility. If there's a file called `Makefile` or `makefile` at the project root,
+then `make` is run instead. If, on the other hand, there's an executable file
+called `build`, then that file is run. Otherwise the default call to `go build`
+takes place.
+
+## Updating dependencies
+
+Johnny Deps can't decide which releases to use from the project's you import.
+But it can help writing the `Godeps` file. By running `jd update`, `jd` will
+disregard the current dependencies in the `Godeps` file, overwriting it with the
+latest master release for each project you depend upon, after pulling. Of
+course, that may or may not work. Using the latest release for each dependency
+could potentially lead to inconsistencies (version mismatches), that would make
+`jd` complain. The dependencies file would have been changed anyway. It's your
+responsibility to decide which projects to upgrade or withhold.
+
+It's worth noting that `jd update` does not rely on the `Godeps` file to check
+current dependencies; it takes them from `go list` instead. A nice consequence
+is that new imports are automatically detected from the code and added to
+`Godeps` with no manual intervention required. (And no longer needed imports
+will be removed as well.) Note also that, although the old dependencies file is
 overwritten, the new copy is not committed or even staged for commit in Git.
 (Rationale: you should test that everything still works properly!) You can do
 that with the rest of your changes, without leaving traces in history if you run
 the update multiple times before you're done.
 
-Keep in mind that updating dependencies can lead to inconsistencies, like the
-"Version mismatch" message shown above. Resolving that problem needs human
-intervention. Someone has to decide which projects *not* to update in order to
-avoid the mismatch, or eventually upgrade other projects to match. `jd` will
-limit itself to reporting the inconsistency during the `update` command, and
-leaving you with an updated `Godeps` that you should further tune. You won't be
-able to `build` until you do.
+## Return codes
 
-There's also a `build` command, that builds a project after triggering an
-implicit `get` to check everything's properly set up. Since building is what
-you'll do most of the time, `jd` conveniently defaults to build when no command
-is provided. In fact, it also treats the project as optional, using the current
-directory to infer a suitable project to act upon. This implies that, when
-working on a project directory, a typical build will be run by typing only `jd`.
-Due to the automatic triggering of `get`, you can readily clone, set to
-appropriate versions and build in a single step with something like:
+These are the return codes for `jd`:
 
-```
-jd github.com/VividCortex/log
-```
-
-Note that `jd build` will run `go build` at the project's root directory.
-However, the `make` command will be run instead if a file called `Makefile` or
-`makefile` exists in that directory; or otherwise `build`, if such an executable
-file is found. In any case, `jd` will run the appropriate build command and fail
-if it returns anything other than zero.
-
-Extra logging can be added by using the global option `-v`. Otherwise the tool
-is completely silent (but setting an appropriate exit code), unless errors
-arise. Use `-v` twice for increased verbosity. Notice though that `-v` is a
-global option, so it goes *before* the command. Other global options are
-available as well, to set specific binaries for Go and Git, or to set a specific
-path for Go sources, instead of using `$GOPATH`.
-
-It's worth noting also that `jd` makes a fair effort to check out a branch whose
-tip matches the required version, as opposed to leaving you in a detached HEAD
-state. (It will, nevertheless, if there's no alternative.) You may turn off that
-behavior by providing the `-d` switch to `get` or `build`.
-
-Run `jd help` for details.
-
-### Installation
-
-To install, clone the repo and then run:
-
-    $ cd johnny_deps
-    $ ./configure --prefix=/usr/local
-    $ make install
+0. Success
+1. Error with parameters
+2. Bad dependencies or unable to read them
+3. Version mismatch detected
+4. External command failed
+5. Unable to checkout requested revision
 
 ## Workflows
 
 Johnny Deps is intentionally agnostic about the specific workflow used. In
-practice, people seem to fall into one of two camps that reflect how they
-think about dependency management, and their differing goals.
+practice, people seem to fall into one of two camps that reflect how they think
+about dependency management, and their differing goals.
 
-The first category, roughly speaking, is those who would like to build from
-the tip of their source control repositories all the time, but have a need for
-pinning some things to a specific version or branch. These users might have a
-minimal `Godeps` file that specifies only those dependencies. Everything else
-is unmanaged.
+The first category, roughly speaking, is those who would like to build from the
+tip of their source control repositories all the time, but have a need for
+pinning some things to a specific version. Those users may use branch names in
+`Godeps` as opposed to commit identifiers, and change to a specific commit when
+they need to pin a version. (Nevertheless, `jd` will not automatically fetch the
+latest changes. See "Retrieving projects".)
 
-The second school of thought holds that the `Godeps` file should contain all
+The second school of thought holds that the `Godeps` file should contain
 external dependencies and their exact versions, so that checking out a
-particular revision of an application's repository and running `jd`
-will result in exactly the same versions of all of the code used to build the
-application, every time.
+particular revision of an application's repository and running `jd` will result
+in exactly the same versions of all of the code used to build the application,
+every time.
 
-At VividCortex, we want to be able to reproduce a binary for debugging or
-other purposes. We use a combination of tools for this, including some helper
-scripts. The outcome is that all of our builds have a command-line flag called
-`--build-version` that, when present, will result in the binary printing out
-the Git revision from which it was built. Checking out that revision will
-restore the `Godeps` file exactly as it was at the time of the build, and
-running `jd` will then check out the versions of the dependencies used for the
-build. In this way, each build contains within it the evidence needed to
-reproduce the build exactly.
+At VividCortex, we want to be able to reproduce a binary for debugging or other
+purposes. All of our builds have a command-line flag called `--build-version`
+that, when present, will result in the binary printing out the Git revision from
+which it was built. We can thus easily reproduce any version by calling `jd
+build` with that revision as the `-r` parameter. To embed the revision in the
+binary, we use a specific shell script called `build` (see "Building" above)
+that runs something like:
 
-If you're interested in how we do this, here's the process:
+```
+go build -ldflags "-X main.Godeps '$(git rev-parse HEAD)'"
+```
 
-1. We use `jd update` to generate the `Godeps` file's contents at the time of
-   the build, and we commit it to Git.
-2. We get the application repository's Git revision and write it to a temporary
-   Go source file, which contains an `init()` function that sets a global
-   variable to the revision. After building, the temporary file is deleted.
-3. We make the application print out the contents of this global variable when
-   the `--build-version` flag is specified.
+At the application we set things up so that `--build-version` displays the
+contents of the `main.Godeps` variable set by the compiler.
 
 ## Contributing
 
