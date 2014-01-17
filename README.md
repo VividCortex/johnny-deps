@@ -224,12 +224,12 @@ the update multiple times before you're done.
 
 These are the return codes for `jd`:
 
-0. Success
-1. Error with parameters
-2. Bad dependencies or unable to read them
-3. Version mismatch detected
-4. External command failed
-5. Unable to checkout requested revision
+* 0 - Success
+* 1 - Error with parameters
+* 2 - Bad dependencies or unable to read them
+* 3 - Version mismatch detected
+* 4 - External command failed
+* 5 - Unable to checkout requested revision
 
 ## Workflows
 
