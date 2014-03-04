@@ -335,9 +335,11 @@ sub get
 		my %deps = read_deps_file($project, $file);
 
 		unless (keys %deps) {
-			# No further dependencies
-			show(VERBOSE, 1, "no dependencies found");
-			next;
+                        # Install sub-dependencies with simple go get
+                        show(VERBOSE, 1, "no dependencies using go get to install default deps");
+                        my $output = run_or_die("$go get -d -v $project");
+                        show(VERBOSE, 1, $output);
+                        next;
 		}
 
 		while (my ($p, $v) = each %deps) {
