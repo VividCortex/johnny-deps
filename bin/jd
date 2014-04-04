@@ -3,7 +3,7 @@
 use strict;
 use warnings;
 
-use Cwd;
+use Cwd qw(cwd realpath);
 use List::Util qw(first);
 
 use constant {
@@ -601,7 +601,7 @@ else {
 		exit(1);
 	}
 
-	my $base = first { $projroot =~ m!^\Q$_\E($|/)! } map { "$_/src" } @gopath;
+	my $base = first { $projroot =~ m!^\Q$_\E($|/)! } map { realpath("$_/src") } @gopath;
 	unless (defined $base) {
 		show(ERROR, 0, "Please specify a project or cd into a project directory");
 		exit(1);
