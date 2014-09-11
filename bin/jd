@@ -368,7 +368,7 @@ sub get
 
 sub build
 {
-	my ($project, $version, $projroot) = @_;
+	my ($action, $project, $version, $projroot) = @_;
 
 	get($project, $version, $projroot);
 	show(INFO, 0, "Building");
@@ -377,15 +377,15 @@ sub build
 
 	if (-r "./makefile" || -r "./Makefile") {
 		show(VERBOSE, 1, "running make");
-		$buildcmd = "$make";
+		$buildcmd = "JD_ACTION=$action $make";
 	}
 	elsif (-x "./build") {
 		show(VERBOSE, 1, "running build");
-		$buildcmd = "./build";
+		$buildcmd = "JD_ACTION=$action ./build";
 	}
 	else {
-		show(VERBOSE, 1, "running go build");
-		$buildcmd = "$go build";
+		show(VERBOSE, 1, "running go $action ./...");
+		$buildcmd = "$go $action ./...";
 	}
 
 	run_or_die($buildcmd);
@@ -452,8 +452,9 @@ Global options:
   -v         Be more verbose; use twice for a stronger effect
 
 Command:
-  build      Build the project with go build or build.sh as appropriate
+  build      Build the project with make, build or go build as appropriate
   get        Retrieve all (transitive) project dependencies
+  install    Works like 'build' but using 'go install' instead
   update     Pin first-level dependencies to most current versions
   help       Show this help message
 
@@ -479,10 +480,11 @@ sub help
 }
 
 my %subcmd = (
-	get    => \&get,
-	build  => \&build,
-	update => \&update,
-	help   => \&help,
+	get     => \&get,
+	build   => sub { build("build", @_) },
+	install => sub { build("install", @_) },
+	update  => \&update,
+	help    => \&help,
 );
 my $cmd = $defcmd;
 my $version;

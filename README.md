@@ -192,12 +192,21 @@ appropriate `-r` to the command above. (The same behavior goes to the `-d`
 option to `build`.)
 
 Johnny Deps calls `go build` at the project's root to build. But, in order to
-accommodate special needs, `jd` first checks for specific instructions,
-resorting to `go build` if there's none. The highest priority goes to the Make
+accommodate special needs, `jd` checks for custom instructions first, resorting
+to `go build` only if there are none. The highest priority goes to the Make
 utility. If there's a file called `Makefile` or `makefile` at the project root,
-then `make` is run instead. If, on the other hand, there's an executable file
-called `build`, then that file is run. Otherwise the default call to `go build`
-takes place.
+then `make` is run. If an executable file called `build` is found, then that
+will be invoked instead. Otherwise the tool resorts to `go build ./...`.
+
+There's no need for a script if you need to `go install ./...` instead. Johnny
+Deps will use the later if you ask it to `install` rather than `build`. However,
+keep in mind that this has to be explicitly asked for; `jd` defaults to `build`
+if no command is provided. The rest of the process works exactly like it does
+for `build`, including the attempts at `make` and the `build` script. Even
+though `jd` makes no difference between `build` and `install` when custom
+scripts are used, the command name is made available in case different actions
+are required in scripts themselves. This is published as the `JD_ACTION`
+environment variable.
 
 ## Updating dependencies
 
