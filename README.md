@@ -196,8 +196,8 @@ accommodate special needs, `jd` first checks for specific instructions,
 resorting to `go build` if there's none. The highest priority goes to the Make
 utility. If there's a file called `Makefile` or `makefile` at the project root,
 then `make` is run instead. If, on the other hand, there's an executable file
-called `build`, then that file is run. Otherwise the default call to `go build`
-takes place.
+called `build`, then that file is run. Otherwise the default call to `go build
+./...` takes place.
 
 ## Updating dependencies
 
