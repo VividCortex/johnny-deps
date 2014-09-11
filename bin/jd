@@ -384,8 +384,8 @@ sub build
 		$buildcmd = "./build";
 	}
 	else {
-		show(VERBOSE, 1, "running go build");
-		$buildcmd = "$go build";
+		show(VERBOSE, 1, "running go build ./...");
+		$buildcmd = "$go build ./...";
 	}
 
 	run_or_die($buildcmd);
