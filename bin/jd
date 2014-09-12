@@ -17,6 +17,7 @@ use constant TABSIZE => 2;
 my $loglevel = ERROR;
 my $depsfile = "Godeps";
 my $defcmd = "build";
+my $use_ssh = 0;
 my @gopath;
 
 # Binaries for Git, Go and make
@@ -134,7 +135,10 @@ sub setup
 
 	unless (-d $projroot) {
 		show(VERBOSE, 1, "cloning to $projroot");
-		run_or_die("$git clone https://$project.git '$projroot'");
+		my $uri = $use_ssh
+			? 'git@github.com:' . substr($project, length "github.com/")
+			: "https://$project.git";
+		run_or_die("$git clone $uri '$projroot'");
 	}
 
 	chdir $projroot;
@@ -466,12 +470,13 @@ Project:
   is provided, jd searches for a project in the current directory.
 
 Options for build/install:
-  -d         Use -d when running get.
-  -r <rev>   Use -r <rev> when running get.
+  Unless otherwise specified, options for the get command are inherited by
+  build and install, and applied during the implicit get.
 
 Options for get:
   -d         Don't aim for branches/tags; work in detached head mode.
   -r <rev>   Checkout revision <rev> for main project.
+  -s         Use SSH when cloning, instead of HTTPS (needs SSH keys).
 
 END
 
@@ -559,7 +564,7 @@ if (defined $ENV{"GOROOT"} && $gopath[0] eq $ENV{"GOROOT"}) {
 while (@ARGV && $ARGV[0] =~ /^-/) {
 	my $opt = shift @ARGV;
 
-	if ($cmd eq "build" || $cmd eq "get") {
+	if ($cmd eq "build" || $cmd eq "install" || $cmd eq "get") {
 		if ($opt eq "-d") {
 			$prefer_detached = 1;
 			next;
@@ -570,6 +575,10 @@ while (@ARGV && $ARGV[0] =~ /^-/) {
 				exit(1);
 			}
 			$version = shift @ARGV;
+			next;
+		}
+		if ($opt eq "-s") {
+			$use_ssh = 1;
 			next;
 		}
 	}
