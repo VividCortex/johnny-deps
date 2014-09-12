@@ -237,7 +237,8 @@ sub get_compiler_deps
 	my $oldcwd = cwd();
 	chdir $projroot;
 
-	my $template = '{{join .Imports "\n"}}';
+	my $template = '{{join .Imports "\n"}}{{"\n"}}' .
+		'{{join .TestImports "\n"}}{{"\n"}}{{join .XTestImports "\n"}}';
 	my @deps = grep m!^github\.com/!,
 		run_or_die("$go list -f '$template' ./... | sort -u");
 	my %projects;
@@ -464,7 +465,7 @@ Project:
   Specified just like in the dependencies file (Godeps). If no project
   is provided, jd searches for a project in the current directory.
 
-Options for build:
+Options for build/install:
   -d         Use -d when running get.
   -r <rev>   Use -r <rev> when running get.
 
