@@ -150,7 +150,7 @@ sub setup
 		return;
 	}
 
-	(undef, $err) = run("$git diff-index --quiet HEAD --");
+	(undef, $err) = run("$git update-index --refresh && $git diff-index --quiet HEAD --");
 
 	if (defined $err) {
 		show(ERROR, 0, "Working directory for $project is NOT clean; refusing to checkout.");
